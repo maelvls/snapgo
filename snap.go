@@ -1,7 +1,6 @@
 package snap
 
 import (
-	"flag"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -15,20 +14,22 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
-	updateSnapshots = flag.Bool("snap.update", false, "update inline snapshots")
-)
-
 type snapMatcher struct {
 	want         interface{}
 	snapFilename string
 	snapLine     int
+	update       bool
+}
+
+func (m *snapMatcher) Update() *snapMatcher {
+	m.update = true
+	return m
 }
 
 func (m snapMatcher) Matches(got interface{}) bool {
-	if *updateSnapshots {
+	if m.update {
 		str := render.AsCode(got)
-		err := InlineSnapshotUpdate(m.snapFilename, m.snapLine, str)
+		err := inlineSnapshotUpdate(m.snapFilename, m.snapLine, str)
 		if err != nil {
 			panic(err)
 		}
@@ -41,20 +42,21 @@ func (m snapMatcher) String() string {
 	return fmt.Sprintf("%v", m.want)
 }
 
-func InlineSnapshot(want interface{}) snapMatcher {
-	m := snapMatcher{want: want}
-	if *updateSnapshots {
-		_, fileName, fileLine, ok := runtime.Caller(1)
-		if !ok {
-			panic(fmt.Errorf("runtime.Caller: could not find which filename:line"))
-		}
-		m.snapFilename = fileName
-		m.snapLine = fileLine
+func InlineSnapshot(want interface{}) *snapMatcher {
+	_, fileName, fileLine, ok := runtime.Caller(1)
+	if !ok {
+		panic(fmt.Errorf("runtime.Caller: could not find which filename:line"))
+	}
+
+	m := &snapMatcher{
+		want:         want,
+		snapFilename: fileName,
+		snapLine:     fileLine,
 	}
 	return m
 }
 
-func InlineSnapshotUpdate(snapFilename string, snapLine int, replacement string) error {
+func inlineSnapshotUpdate(snapFilename string, snapLine int, replacement string) error {
 	f := token.NewFileSet()
 
 	node, err := parser.ParseFile(f, snapFilename, nil, parser.AllErrors)
