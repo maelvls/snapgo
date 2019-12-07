@@ -12,7 +12,9 @@ import (
 	"reflect"
 	"runtime"
 
+	"github.com/gdexlab/go-render/render"
 	"github.com/golang/mock/gomock"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -33,7 +35,6 @@ func InlineSnapshotUpdate(snapshotFilename string, snapshotLine int, replacement
 		os.Exit(1)
 	}
 
-	logrus.Debug("replacement: ", debugFmtToStr(f, newExpr))
 	if logrus.GetLevel() == logrus.TraceLevel {
 		err = format.Node(os.Stdout, f, newExpr)
 		if err != nil {
@@ -42,6 +43,7 @@ func InlineSnapshotUpdate(snapshotFilename string, snapshotLine int, replacement
 		}
 	}
 
+	found := false
 	visit := func(node ast.Node) bool {
 		if node == nil {
 			return true
@@ -59,6 +61,7 @@ func InlineSnapshotUpdate(snapshotFilename string, snapshotLine int, replacement
 						debugFmtToStr(f, newExpr),
 					)
 					call.Args[0] = newExpr
+					found = true
 					return false
 				}
 			case *ast.Ident: // ReadFile
@@ -69,6 +72,7 @@ func InlineSnapshotUpdate(snapshotFilename string, snapshotLine int, replacement
 						debugFmtToStr(f, newExpr),
 					)
 					call.Args[0] = newExpr
+					found = true
 					return false
 				}
 			}
@@ -78,10 +82,19 @@ func InlineSnapshotUpdate(snapshotFilename string, snapshotLine int, replacement
 	}
 	ast.Inspect(node, visit)
 
-	logrus.Debugf("new file: %v", debugFmtToStr(f, node))
+	if !found {
+		return fmt.Errorf("could not find")
+	}
+
+	logrus.Tracef("writing to %s: %v", snapshotFilename, debugFmtToStr(f, node))
+	file, err := os.Create(snapshotFilename)
 	if err != nil {
-		logrus.Errorf("%v\n", err)
-		os.Exit(1)
+		return errors.Wrap(err, "when opening file for updating snapshot")
+	}
+
+	err = format.Node(file, f, node)
+	if err != nil {
+		return errors.Wrap(err, "when writing to file for updating snapshot")
 	}
 
 	return nil
@@ -117,7 +130,7 @@ type M struct {
 
 func (m M) Matches(got interface{}) bool {
 	if *updateSnapshots {
-		str := fmt.Sprintf("%#v\n", got)
+		str := render.AsCode(got)
 		err := InlineSnapshotUpdate(m.snapshotFilename, m.snapshotLine, str)
 		if err != nil {
 			panic(err)
