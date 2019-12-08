@@ -14,5 +14,22 @@ mock.EXPECT().
     SomeFunction(snap.InlineSnapshot(deeplyNestedStruct))
 ```
 
-Running with `go test ./... -snap.update` will update the snapshots and the
-deeplyNestedStruct will get filled with the 'got' value.
+Running with `.Update()` will update the snapshots and the
+deeplyNestedStruct will get filled with the 'got' value:
+
+```go
+snap.InlineSnapshot(nil).Update().Matches(&struct{data string}{"foo"})
+```
+
+will become
+
+```go
+snap.InlineSnapshot(&struct{data string}{"foo"}).Matches(&struct{data string}{"foo"})
+```
+
+(remember to remove `Update()`)
+
+## Caveats
+
+- all the fields, even the nil ones, are shown
+- problems with `*string` (and any pointer to constant literals)
